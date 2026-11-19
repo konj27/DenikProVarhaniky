@@ -1,6 +1,6 @@
 # Varhanici Log Page (Streamlit + FastAPI + sqlite3)
 
-A lightweight full-stack Python starter template using:
+A lightweight full-stack Python webpage using:
 - **Frontend**: [Streamlit](https://streamlit.io/) (`frontend/app.py`)
 - **Backend**: [FastAPI](https://fastapi.tiangolo.com/) (`backend/main.py`, `backend/models.py`, `backend/schemas.py`)
 - **Database / Persistence**: Built-in Python `sqlite3` (`backend/database.py`)
