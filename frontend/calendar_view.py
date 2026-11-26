@@ -15,7 +15,7 @@ def _safe_json_for_script(data: object) -> str:
 
 
 def render_calendar(logs: list[dict], height: int = 760) -> None:
-    """Render an interactive HTML/CSS/JS calendar component using streamlit.components.v1.html."""
+    """Render an interactive responsive HTML/CSS/JS calendar component."""
     events_json = _safe_json_for_script(logs)
 
     html_code = f"""
@@ -23,6 +23,7 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
     <html lang="cs">
     <head>
         <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <style>
             :root {{
                 --bg: #0e1117;
@@ -53,10 +54,11 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
             * {{
                 box-sizing: border-box;
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                -webkit-tap-highlight-color: transparent;
             }}
             body {{
                 margin: 0;
-                padding: 4px;
+                padding: 2px;
                 background: transparent;
                 color: var(--text);
             }}
@@ -70,6 +72,7 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
+                gap: 8px;
                 padding: 14px 18px;
                 background: var(--panel);
                 border-bottom: 1px solid var(--border);
@@ -78,16 +81,18 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
                 font-size: 1.2rem;
                 font-weight: 700;
                 margin: 0;
+                white-space: nowrap;
             }}
             .nav-buttons {{
                 display: flex;
                 gap: 8px;
+                flex-shrink: 0;
             }}
             .btn {{
                 background: var(--bg);
                 color: var(--text);
                 border: 1px solid var(--border);
-                border-radius: 6px;
+                border-radius: 8px;
                 padding: 6px 12px;
                 font-size: 0.85rem;
                 font-weight: 500;
@@ -185,6 +190,144 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
                 text-overflow: ellipsis;
                 white-space: nowrap;
             }}
+            /* Mobile-only dot indicators and selected-day agenda panel */
+            .mobile-dots {{
+                display: none;
+                align-items: center;
+                justify-content: center;
+                gap: 3px;
+                margin-top: 2px;
+                flex-wrap: wrap;
+            }}
+            .mobile-dot {{
+                width: 6px;
+                height: 6px;
+                border-radius: 999px;
+                background: var(--accent);
+            }}
+            .mobile-more {{
+                font-size: 0.65rem;
+                font-weight: 600;
+                color: var(--accent);
+            }}
+            .mobile-agenda {{
+                display: none;
+                margin-top: 12px;
+                background: var(--bg);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                overflow: hidden;
+            }}
+            .mobile-agenda-header {{
+                padding: 10px 14px;
+                background: var(--panel);
+                border-bottom: 1px solid var(--border);
+                font-size: 0.9rem;
+                font-weight: 700;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }}
+            .mobile-agenda-count {{
+                font-size: 0.78rem;
+                font-weight: 500;
+                color: var(--muted);
+            }}
+            .mobile-agenda-body {{
+                padding: 10px 12px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }}
+            .agenda-empty {{
+                color: var(--muted);
+                font-size: 0.85rem;
+                padding: 6px 2px;
+            }}
+            .agenda-card {{
+                background: var(--panel);
+                border: 1px solid var(--border);
+                border-left: 4px solid var(--accent);
+                border-radius: 8px;
+                padding: 10px 12px;
+                cursor: pointer;
+            }}
+            .agenda-card-title {{
+                font-size: 0.95rem;
+                font-weight: 700;
+                margin-bottom: 4px;
+                overflow-wrap: anywhere;
+            }}
+            .agenda-card-meta {{
+                font-size: 0.8rem;
+                color: var(--muted);
+                margin-bottom: 6px;
+            }}
+            .agenda-card-notes {{
+                font-size: 0.85rem;
+                background: var(--bg);
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                padding: 8px 10px;
+                white-space: pre-wrap;
+                overflow-wrap: anywhere;
+            }}
+
+            @media (max-width: 640px) {{
+                .calendar-header {{
+                    padding: 10px 12px;
+                }}
+                .month-title {{
+                    font-size: 1rem;
+                }}
+                .nav-buttons {{
+                    gap: 5px;
+                }}
+                .btn {{
+                    padding: 6px 10px;
+                    font-size: 0.82rem;
+                    min-height: 34px;
+                }}
+                .btn-label {{
+                    display: none;
+                }}
+                .weekdays {{
+                    font-size: 0.72rem;
+                    padding: 6px 0;
+                }}
+                .days-grid {{
+                    grid-auto-rows: minmax(50px, auto);
+                }}
+                .day-cell {{
+                    padding: 5px 2px;
+                    align-items: center;
+                    justify-content: flex-start;
+                    cursor: pointer;
+                }}
+                .day-cell.selected {{
+                    outline: 2px solid var(--accent);
+                    outline-offset: -2px;
+                    background: var(--accent-bg);
+                }}
+                .day-number {{
+                    justify-content: center;
+                    font-size: 0.82rem;
+                    margin-bottom: 0;
+                }}
+                .day-cell.today .day-number span {{
+                    padding: 1px 6px;
+                }}
+                .event-chip {{
+                    display: none;
+                }}
+                .mobile-dots {{
+                    display: flex;
+                }}
+                .mobile-agenda {{
+                    display: block;
+                }}
+            }}
+
             /* Modal */
             .modal-backdrop {{
                 display: none;
@@ -194,6 +337,7 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
                 align-items: center;
                 justify-content: center;
                 z-index: 1000;
+                padding: 12px;
             }}
             .modal-backdrop.active {{
                 display: flex;
@@ -202,8 +346,10 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
                 background: var(--panel);
                 border: 1px solid var(--border);
                 border-radius: 10px;
-                width: 90%;
+                width: 100%;
                 max-width: 420px;
+                max-height: 85vh;
+                overflow-y: auto;
                 padding: 18px 20px;
                 box-shadow: 0 12px 32px rgba(0,0,0,0.35);
             }}
@@ -211,19 +357,21 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
                 display: flex;
                 justify-content: space-between;
                 align-items: flex-start;
+                gap: 8px;
                 margin-bottom: 12px;
             }}
             .modal-title {{
                 margin: 0;
-                font-size: 1.15rem;
+                font-size: 1.1rem;
                 overflow-wrap: anywhere;
             }}
             .close-btn {{
                 background: none;
                 border: none;
                 color: var(--muted);
-                font-size: 1.2rem;
+                font-size: 1.25rem;
                 cursor: pointer;
+                padding: 2px 6px;
             }}
             .modal-row {{
                 margin: 8px 0;
@@ -236,6 +384,7 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
                 border: 1px solid var(--border);
                 border-radius: 6px;
                 white-space: pre-wrap;
+                overflow-wrap: anywhere;
                 font-size: 0.85rem;
             }}
         </style>
@@ -245,9 +394,9 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
             <div class="calendar-header">
                 <h2 class="month-title" id="monthTitle"></h2>
                 <div class="nav-buttons">
-                    <button class="btn" id="prevBtn">◀ Předchozí</button>
+                    <button class="btn" id="prevBtn" aria-label="Předchozí měsíc">◀<span class="btn-label"> Předchozí</span></button>
                     <button class="btn" id="todayBtn">Dnes</button>
-                    <button class="btn" id="nextBtn">Další ▶</button>
+                    <button class="btn" id="nextBtn" aria-label="Další měsíc"><span class="btn-label">Další </span>▶</button>
                 </div>
             </div>
             <div class="weekdays">
@@ -256,11 +405,19 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
             <div class="days-grid" id="daysGrid"></div>
         </div>
 
+        <div class="mobile-agenda" id="mobileAgenda">
+            <div class="mobile-agenda-header">
+                <span id="agendaDateTitle"></span>
+                <span class="mobile-agenda-count" id="agendaCount"></span>
+            </div>
+            <div class="mobile-agenda-body" id="agendaBody"></div>
+        </div>
+
         <div class="modal-backdrop" id="modalBackdrop">
             <div class="modal-card">
                 <div class="modal-header">
                     <h3 class="modal-title" id="modalTitle"></h3>
-                    <button class="close-btn" id="closeModal">✕</button>
+                    <button class="close-btn" id="closeModal" aria-label="Zavřít">✕</button>
                 </div>
                 <div class="modal-row" id="modalDate"></div>
                 <div class="modal-row" id="modalAuthor"></div>
@@ -275,9 +432,10 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
                 "Červenec", "Srpen", "Září", "Říjen", "Listopad", "Prosinec"
             ];
 
-            let currentDate = new Date();
-            let currentYear = currentDate.getFullYear();
-            let currentMonth = currentDate.getMonth();
+            const nowInit = new Date();
+            let currentYear = nowInit.getFullYear();
+            let currentMonth = nowInit.getMonth();
+            let selectedDateKey = formatLocalKey(currentYear, currentMonth, nowInit.getDate());
 
             function toDateKey(dateStr) {{
                 if (!dateStr) return "";
@@ -293,9 +451,13 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
                 return "";
             }}
 
-            function formatDisplayDateTime(dateKey, timeStr) {{
+            function formatDisplayDate(dateKey) {{
                 const parts = String(dateKey).split("-");
-                const formattedDate = parts.length === 3 ? `${{parts[2]}}.${{parts[1]}}.${{parts[0]}}` : dateKey;
+                return parts.length === 3 ? `${{parts[2]}}.${{parts[1]}}.${{parts[0]}}` : dateKey;
+            }}
+
+            function formatDisplayDateTime(dateKey, timeStr) {{
+                const formattedDate = formatDisplayDate(dateKey);
                 return timeStr ? `${{formattedDate}} ${{timeStr}}` : formattedDate;
             }}
 
@@ -320,6 +482,71 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
                 document.getElementById("modalBackdrop").classList.add("active");
             }}
 
+            function groupEventsByDay() {{
+                const eventsByDay = {{}};
+                for (const ev of EVENTS) {{
+                    const key = toDateKey(ev.date || ev.created_at);
+                    if (!eventsByDay[key]) eventsByDay[key] = [];
+                    eventsByDay[key].push(ev);
+                }}
+                return eventsByDay;
+            }}
+
+            function renderMobileAgenda(eventsByDay) {{
+                const titleEl = document.getElementById("agendaDateTitle");
+                const countEl = document.getElementById("agendaCount");
+                const bodyEl = document.getElementById("agendaBody");
+
+                const dayEvents = (eventsByDay[selectedDateKey] || []).slice().sort((a, b) => {{
+                    const ta = toTimeStr(a.date || a.created_at);
+                    const tb = toTimeStr(b.date || b.created_at);
+                    return ta.localeCompare(tb);
+                }});
+
+                titleEl.textContent = "📅 " + formatDisplayDate(selectedDateKey);
+                countEl.textContent = dayEvents.length === 1
+                    ? "1 záznam"
+                    : `${{dayEvents.length}} záznamů`;
+                bodyEl.innerHTML = "";
+
+                if (dayEvents.length === 0) {{
+                    const empty = document.createElement("div");
+                    empty.className = "agenda-empty";
+                    empty.textContent = "Pro vybraný den zatím nejsou žádné záznamy. Klepněte na den s modrou tečkou.";
+                    bodyEl.appendChild(empty);
+                    return;
+                }}
+
+                for (const ev of dayEvents) {{
+                    const card = document.createElement("div");
+                    card.className = "agenda-card";
+
+                    const timeStr = toTimeStr(ev.date || ev.created_at);
+                    const titleDiv = document.createElement("div");
+                    titleDiv.className = "agenda-card-title";
+                    titleDiv.textContent = "🎹 " + ev.title;
+
+                    const metaDiv = document.createElement("div");
+                    metaDiv.className = "agenda-card-meta";
+                    metaDiv.textContent = timeStr
+                        ? `🕒 ${{timeStr}} • 👤 ${{ev.author}}`
+                        : `👤 ${{ev.author}}`;
+
+                    card.appendChild(titleDiv);
+                    card.appendChild(metaDiv);
+
+                    if (ev.notes) {{
+                        const notesDiv = document.createElement("div");
+                        notesDiv.className = "agenda-card-notes";
+                        notesDiv.textContent = "🎶 " + ev.notes;
+                        card.appendChild(notesDiv);
+                    }}
+
+                    card.addEventListener("click", () => openModal(ev, selectedDateKey));
+                    bodyEl.appendChild(card);
+                }}
+            }}
+
             function renderCalendar() {{
                 const grid = document.getElementById("daysGrid");
                 grid.innerHTML = "";
@@ -327,21 +554,13 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
                     `${{MONTHS_CS[currentMonth]}} ${{currentYear}}`;
 
                 const firstDayOfMonth = new Date(currentYear, currentMonth, 1);
-                // Convert Sunday=0..Saturday=6 into Monday=0..Sunday=6
                 const startOffset = (firstDayOfMonth.getDay() + 6) % 7;
                 const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
                 const daysInPrevMonth = new Date(currentYear, currentMonth, 0).getDate();
 
                 const today = new Date();
                 const todayKey = formatLocalKey(today.getFullYear(), today.getMonth(), today.getDate());
-
-                // Group events by YYYY-MM-DD
-                const eventsByDay = {{}};
-                for (const ev of EVENTS) {{
-                    const key = toDateKey(ev.date || ev.created_at);
-                    if (!eventsByDay[key]) eventsByDay[key] = [];
-                    eventsByDay[key].push(ev);
-                }}
+                const eventsByDay = groupEventsByDay();
 
                 const totalCells = Math.ceil((startOffset + daysInMonth) / 7) * 7;
 
@@ -371,6 +590,9 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
                     if (dateKey === todayKey) {{
                         cell.classList.add("today");
                     }}
+                    if (dateKey === selectedDateKey) {{
+                        cell.classList.add("selected");
+                    }}
 
                     const numDiv = document.createElement("div");
                     numDiv.className = "day-number";
@@ -382,6 +604,25 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
                         const tb = toTimeStr(b.date || b.created_at);
                         return ta.localeCompare(tb);
                     }});
+
+                    if (dayEvents.length > 0) {{
+                        const dotsWrap = document.createElement("div");
+                        dotsWrap.className = "mobile-dots";
+                        const visibleDots = Math.min(dayEvents.length, 3);
+                        for (let d = 0; d < visibleDots; d++) {{
+                            const dot = document.createElement("span");
+                            dot.className = "mobile-dot";
+                            dotsWrap.appendChild(dot);
+                        }}
+                        if (dayEvents.length > 3) {{
+                            const more = document.createElement("span");
+                            more.className = "mobile-more";
+                            more.textContent = `+${{dayEvents.length - 3}}`;
+                            dotsWrap.appendChild(more);
+                        }}
+                        cell.appendChild(dotsWrap);
+                    }}
+
                     for (const ev of dayEvents) {{
                         const chip = document.createElement("div");
                         chip.className = "event-chip";
@@ -400,28 +641,41 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
 
                         chip.appendChild(titleSpan);
                         chip.appendChild(authorSpan);
-                        chip.addEventListener("click", () => openModal(ev, dateKey));
+                        chip.addEventListener("click", (e) => {{
+                            e.stopPropagation();
+                            openModal(ev, dateKey);
+                        }});
                         cell.appendChild(chip);
                     }}
 
+                    cell.addEventListener("click", () => {{
+                        selectedDateKey = dateKey;
+                        renderCalendar();
+                    }});
+
                     grid.appendChild(cell);
                 }}
+
+                renderMobileAgenda(eventsByDay);
             }}
 
             document.getElementById("prevBtn").addEventListener("click", () => {{
                 currentMonth--;
                 if (currentMonth < 0) {{ currentMonth = 11; currentYear--; }}
+                selectedDateKey = formatLocalKey(currentYear, currentMonth, 1);
                 renderCalendar();
             }});
             document.getElementById("nextBtn").addEventListener("click", () => {{
                 currentMonth++;
                 if (currentMonth > 11) {{ currentMonth = 0; currentYear++; }}
+                selectedDateKey = formatLocalKey(currentYear, currentMonth, 1);
                 renderCalendar();
             }});
             document.getElementById("todayBtn").addEventListener("click", () => {{
                 const now = new Date();
                 currentYear = now.getFullYear();
                 currentMonth = now.getMonth();
+                selectedDateKey = formatLocalKey(currentYear, currentMonth, now.getDate());
                 renderCalendar();
             }});
             document.getElementById("closeModal").addEventListener("click", () => {{

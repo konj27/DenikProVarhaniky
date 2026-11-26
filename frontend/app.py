@@ -14,9 +14,10 @@ from calendar_view import render_calendar
 API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
 
 st.set_page_config(
-    page_title="Varhanici Deník",
+    page_title="Deník varhaníka",
     page_icon="🎹",
     layout="wide",
+    initial_sidebar_state="auto",
 )
 
 
@@ -35,6 +36,16 @@ def _format_timestamp(raw_ts: str) -> str:
         return datetime.fromisoformat(raw_ts.replace("Z", "+00:00")).strftime("%d.%m.%Y %H:%M")
     except ValueError:
         return raw_ts[:16].replace("T", " ")
+
+
+def _combine_date_time(entry_date, entry_time) -> str | None:
+    if entry_date and entry_time:
+        return datetime.combine(entry_date, entry_time).strftime("%Y-%m-%dT%H:%M:%S")
+    if entry_date:
+        return entry_date.isoformat()
+    if entry_time:
+        return datetime.combine(datetime.now().date(), entry_time).strftime("%Y-%m-%dT%H:%M:%S")
+    return None
 
 
 def fetch_my_parishes() -> list[dict]:
@@ -175,9 +186,98 @@ def delete_log_entry(log_id: int) -> None:
         raise ValueError(_extract_error(resp, "Záznam se nepodařilo smazat."))
 
 
+@st.dialog("🎹 Nový záznam")
+def open_create_log_dialog(parish: dict, default_author: str) -> None:
+    st.caption(f"⛪ Farnost: **{parish['name']}**")
+    with st.form("dialog_create_log_form", clear_on_submit=True):
+        title = st.text_input("Svátek", placeholder="např. 33. Neděle")
+        author = st.text_input(
+            "Varhaník",
+            value=default_author,
+            placeholder="např. Jan Koňařík",
+        )
+        notes = st.text_area("Písně", placeholder="např. 519, 502, ...", height=110)
+        col_date, col_time = st.columns(2)
+        with col_date:
+            entry_date = st.date_input("Datum", value=None, format="DD.MM.YYYY")
+        with col_time:
+            entry_time = st.time_input("Čas", value=None, step=300)
+        submitted = st.form_submit_button(
+            "Přidat záznam",
+            type="primary",
+            use_container_width=True,
+        )
+
+        if submitted:
+            if not title.strip() or not author.strip():
+                st.warning("Vyplňte prosím Svátek i Varhaníka.")
+            else:
+                try:
+                    create_log_entry(
+                        title=title.strip(),
+                        author=author.strip(),
+                        notes=notes.strip(),
+                        parish_id=parish["id"],
+                        entry_date=_combine_date_time(entry_date, entry_time),
+                    )
+                    st.toast("Záznam byl přidán!", icon="✅")
+                    st.rerun()
+                except ValueError as exc:
+                    st.warning(str(exc))
+                except requests.RequestException as exc:
+                    st.error(f"Nepodařilo se vytvořit záznam: {exc}")
+
+
 # --- Auth Gate ---
 current_user = require_authentication(API_BASE_URL)
 is_admin = bool(current_user.get("is_admin", False))
+
+# --- Responsive Mobile & Button Styling ---
+st.markdown(
+    """
+    <style>
+    @media (max-width: 640px) {
+        .block-container {
+            padding-top: 2.5rem !important;
+            padding-left: 0.75rem !important;
+            padding-right: 0.75rem !important;
+            padding-bottom: 1.5rem !important;
+        }
+        h1, h2 {
+            font-size: 1.35rem !important;
+        }
+        div[data-testid="stButton"] button {
+            min-height: 2.6rem;
+        }
+    }
+    div[class*="st-key-approve_req_"] button {
+        background-color: #16a34a !important;
+        border-color: #15803d !important;
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        font-size: 1.05rem !important;
+    }
+    div[class*="st-key-approve_req_"] button:hover {
+        background-color: #15803d !important;
+        border-color: #166534 !important;
+        color: #ffffff !important;
+    }
+    div[class*="st-key-deny_req_"] button {
+        background-color: #dc2626 !important;
+        border-color: #b91c1c !important;
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        font-size: 1.05rem !important;
+    }
+    div[class*="st-key-deny_req_"] button:hover {
+        background-color: #b91c1c !important;
+        border-color: #991b1b !important;
+        color: #ffffff !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # --- Load Parishes ---
 backend_available = True
@@ -193,7 +293,28 @@ try:
 except requests.RequestException:
     backend_available = False
 
-selected_parish: dict | None = None
+parish_by_id = {p["id"]: p for p in my_parishes}
+parish_ids = [p["id"] for p in my_parishes]
+
+if parish_ids and st.session_state.get("selected_parish_id") not in parish_by_id:
+    st.session_state["selected_parish_id"] = parish_ids[0]
+
+
+def _on_sidebar_parish_change() -> None:
+    chosen = st.session_state.get("sidebar_parish_select")
+    if chosen is not None:
+        st.session_state["selected_parish_id"] = chosen
+
+
+def _on_main_parish_change() -> None:
+    chosen = st.session_state.get("main_parish_pills")
+    if chosen is not None:
+        st.session_state["selected_parish_id"] = chosen
+
+
+selected_parish: dict | None = (
+    parish_by_id.get(st.session_state.get("selected_parish_id")) if parish_ids else None
+)
 
 # --- Sidebar ---
 with st.sidebar:
@@ -215,22 +336,19 @@ with st.sidebar:
     elif not my_parishes:
         st.warning("Nemáte přiřazenou žádnou farnost.")
     else:
-        parish_ids = [p["id"] for p in my_parishes]
-        current_selected_id = st.session_state.get("selected_parish_id")
-        if current_selected_id not in parish_ids:
-            current_selected_id = parish_ids[0]
-            st.session_state["selected_parish_id"] = current_selected_id
-
-        default_index = parish_ids.index(current_selected_id)
-        selected_parish = st.selectbox(
+        st.session_state["sidebar_parish_select"] = selected_parish["id"]
+        st.selectbox(
             "Přepnout farnost",
-            options=my_parishes,
-            index=default_index,
-            format_func=lambda p: f"🏠 {p['name']}" if p.get("is_home") else p["name"],
+            options=parish_ids,
+            format_func=lambda pid: (
+                f"🏠 {parish_by_id[pid]['name']}"
+                if parish_by_id[pid].get("is_home")
+                else parish_by_id[pid]["name"]
+            ),
+            key="sidebar_parish_select",
+            on_change=_on_sidebar_parish_change,
             label_visibility="collapsed",
         )
-        if selected_parish is not None:
-            st.session_state["selected_parish_id"] = selected_parish["id"]
 
         if not is_admin:
             pending_parish_ids = {req["parish_id"] for req in my_pending_requests}
@@ -241,7 +359,7 @@ with st.sidebar:
             requestable_parishes = [
                 p
                 for p in all_parishes
-                if p["id"] not in parish_ids and p["id"] not in pending_parish_ids
+                if p["id"] not in parish_by_id and p["id"] not in pending_parish_ids
             ]
             if requestable_parishes:
                 with st.expander("➕ Požádat o další farnost"):
@@ -267,7 +385,7 @@ with st.sidebar:
     st.divider()
     st.subheader("Nový záznam")
     with st.form("create_log_form", clear_on_submit=True):
-        title = st.text_input("Svátek", placeholder="např. 33.Neděle")
+        title = st.text_input("Svátek", placeholder="např. 33. Neděle")
         author = st.text_input(
             "Varhaník",
             value=current_user.get("username", ""),
@@ -292,24 +410,12 @@ with st.sidebar:
                 st.warning("Nejprve vyberte farnost.")
             else:
                 try:
-                    if entry_date and entry_time:
-                        date_str = datetime.combine(entry_date, entry_time).strftime(
-                            "%Y-%m-%dT%H:%M:%S"
-                        )
-                    elif entry_date:
-                        date_str = entry_date.isoformat()
-                    elif entry_time:
-                        date_str = datetime.combine(datetime.now().date(), entry_time).strftime(
-                            "%Y-%m-%dT%H:%M:%S"
-                        )
-                    else:
-                        date_str = None
                     create_log_entry(
                         title=title.strip(),
                         author=author.strip(),
                         notes=notes.strip(),
                         parish_id=selected_parish["id"],
-                        entry_date=date_str,
+                        entry_date=_combine_date_time(entry_date, entry_time),
                     )
                     st.toast("Záznam byl přidán!", icon="✅")
                     st.rerun()
@@ -317,41 +423,6 @@ with st.sidebar:
                     st.warning(str(exc))
                 except requests.RequestException as exc:
                     st.error(f"Nepodařilo se vytvořit záznam: {exc}")
-
-
-# --- Custom Styling for Admin Approve / Deny Buttons ---
-if is_admin:
-    st.markdown(
-        """
-        <style>
-        div[class*="st-key-approve_req_"] button {
-            background-color: #16a34a !important;
-            border-color: #15803d !important;
-            color: #ffffff !important;
-            font-weight: 700 !important;
-            font-size: 1.05rem !important;
-        }
-        div[class*="st-key-approve_req_"] button:hover {
-            background-color: #15803d !important;
-            border-color: #166534 !important;
-            color: #ffffff !important;
-        }
-        div[class*="st-key-deny_req_"] button {
-            background-color: #dc2626 !important;
-            border-color: #b91c1c !important;
-            color: #ffffff !important;
-            font-weight: 700 !important;
-            font-size: 1.05rem !important;
-        }
-        div[class*="st-key-deny_req_"] button:hover {
-            background-color: #b91c1c !important;
-            border-color: #991b1b !important;
-            color: #ffffff !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
 
 
 def _can_delete_log(entry: dict) -> bool:
@@ -365,7 +436,7 @@ def _can_delete_log(entry: dict) -> bool:
 
 def _render_logs_list(logs: list[dict]) -> None:
     if not logs:
-        st.info("V této farnosti zatím nejsou žádné záznamy. Přidejte první v levém panelu!")
+        st.info("V této farnosti zatím nejsou žádné záznamy. Přidejte první tlačítkem ➕ Přidat záznam!")
         return
 
     for entry in logs:
@@ -446,13 +517,40 @@ def _render_admin_requests_tab(requests_list: list[dict]) -> None:
 
 # --- Main Content ---
 if not backend_available:
-    st.header("Varhanici Log")
+    st.header("Deník varhaníka")
     st.info("Čekání na připojení k serveru...")
 elif selected_parish is None:
-    st.header("Varhanici Log")
+    st.header("Deník varhaníka")
     st.info("Není vybrána žádná farnost.")
 else:
-    st.header(f"Záznamy — {selected_parish['name']}")
+    col_title, col_add = st.columns([4, 1.4], vertical_alignment="center")
+    with col_title:
+        st.header(f"⛪ {selected_parish['name']}")
+    with col_add:
+        if st.button(
+            "➕ Přidat záznam",
+            type="primary",
+            use_container_width=True,
+            key="open_add_dialog_btn",
+        ):
+            open_create_log_dialog(selected_parish, current_user.get("username", ""))
+
+    if len(parish_ids) > 1:
+        st.session_state["main_parish_pills"] = selected_parish["id"]
+        st.pills(
+            "Farnost",
+            options=parish_ids,
+            format_func=lambda pid: (
+                f"🏠 {parish_by_id[pid]['name']}"
+                if parish_by_id[pid].get("is_home")
+                else parish_by_id[pid]["name"]
+            ),
+            selection_mode="single",
+            key="main_parish_pills",
+            on_change=_on_main_parish_change,
+            label_visibility="collapsed",
+        )
+
     try:
         logs = fetch_logs(selected_parish["id"])
         if is_admin:

@@ -85,6 +85,20 @@ def logout_request(api_base_url: str) -> None:
 
 def render_auth_gate(api_base_url: str) -> None:
     """Render login and registration view."""
+    st.markdown(
+        """
+        <style>
+        @media (max-width: 640px) {
+            .block-container {
+                padding-top: 2rem !important;
+                padding-left: 0.75rem !important;
+                padding-right: 0.75rem !important;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     _, col_center, _ = st.columns([1, 1.4, 1])
     with col_center:
         st.title("🎹 Deník varhaníka")
