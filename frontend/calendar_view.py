@@ -88,7 +88,7 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
             }}
             .weekdays {{
                 display: grid;
-                grid-template-columns: repeat(7, 1fr);
+                grid-template-columns: repeat(7, minmax(0, 1fr));
                 background: var(--panel);
                 border-bottom: 1px solid var(--border);
                 text-align: center;
@@ -99,10 +99,12 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
             }}
             .days-grid {{
                 display: grid;
-                grid-template-columns: repeat(7, 1fr);
+                grid-template-columns: repeat(7, minmax(0, 1fr));
                 grid-auto-rows: minmax(105px, auto);
             }}
             .day-cell {{
+                min-width: 0;
+                overflow: hidden;
                 border-right: 1px solid var(--border);
                 border-bottom: 1px solid var(--border);
                 padding: 6px;
@@ -139,6 +141,8 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
                 font-size: 0.75rem;
             }}
             .event-chip {{
+                max-width: 100%;
+                min-width: 0;
                 background: var(--chip-bg);
                 border-left: 3px solid var(--chip-border);
                 border-radius: 4px;
@@ -159,10 +163,15 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
                 display: block;
                 overflow: hidden;
                 text-overflow: ellipsis;
+                white-space: nowrap;
             }}
             .event-chip .ev-author {{
+                display: block;
                 font-size: 0.7rem;
                 color: var(--muted);
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
             }}
             /* Modal */
             .modal-backdrop {{
@@ -195,6 +204,7 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
             .modal-title {{
                 margin: 0;
                 font-size: 1.15rem;
+                overflow-wrap: anywhere;
             }}
             .close-btn {{
                 background: none;
@@ -363,11 +373,14 @@ def render_calendar(logs: list[dict], height: int = 760) -> None:
                     for (const ev of dayEvents) {{
                         const chip = document.createElement("div");
                         chip.className = "event-chip";
+                        chip.title = ev.title || "";
                         const timeStr = toTimeStr(ev.date || ev.created_at);
+                        const rawTitle = String(ev.title || "");
+                        const shortTitle = rawTitle.length > 20 ? rawTitle.slice(0, 20) + "..." : rawTitle;
 
                         const titleSpan = document.createElement("span");
                         titleSpan.className = "ev-title";
-                        titleSpan.textContent = timeStr ? `🕒 ${{timeStr}} 🎹 ${{ev.title}}` : `🎹 ${{ev.title}}`;
+                        titleSpan.textContent = timeStr ? `🕒 ${{timeStr}} 🎹 ${{shortTitle}}` : `🎹 ${{shortTitle}}`;
 
                         const authorSpan = document.createElement("span");
                         authorSpan.className = "ev-author";

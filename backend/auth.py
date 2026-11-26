@@ -129,7 +129,7 @@ def get_current_user(
 
     row = db.execute(
         """
-        SELECT u.id, u.username, u.farnost, u.created_at, s.expires_at
+        SELECT u.id, u.username, u.farnost, u.is_admin, u.created_at, s.expires_at
         FROM sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.token_hash = ?
@@ -151,5 +151,18 @@ def get_current_user(
         id=row["id"],
         username=row["username"],
         farnost=row["farnost"],
+        is_admin=bool(row["is_admin"]),
         created_at=row["created_at"],
     )
+
+
+def require_admin(
+    current_user: schemas.UserResponse = Depends(get_current_user),
+) -> schemas.UserResponse:
+    """FastAPI dependency enforcing admin privileges."""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Pro tuto akci jsou vyžadována administrátorská práva.",
+        )
+    return current_user

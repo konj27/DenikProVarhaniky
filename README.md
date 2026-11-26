@@ -33,7 +33,20 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-### 2. Run the FastAPI Backend
+### 2. Configure `.env`
+
+Create or update `.env` in the repository root:
+
+```env
+REGISTRATION_MASTER_PASSWORD=varhanici-master-heslo
+SESSION_TTL_HOURS=24
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=varhanici-admin-heslo
+```
+
+On first database setup, the admin account from `.env` is created automatically as the first user row, and the default parishes (`Brno Mendlovo Náměstí`, `Nový Hrozenkov`) are seeded.
+
+### 3. Run the FastAPI Backend
 
 In your first terminal (from the `varhanici_logPage` repository root):
 
@@ -44,7 +57,7 @@ uvicorn backend.main:app --reload --port 8000
 - Interactive Swagger UI docs: `http://127.0.0.1:8000/docs`
 - SQLite database file (`app.db`) is automatically initialized on startup.
 
-### 3. Run the Streamlit Frontend
+### 4. Run the Streamlit Frontend
 
 In a second terminal (with the virtual environment activated):
 

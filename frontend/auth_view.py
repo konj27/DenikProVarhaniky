@@ -22,6 +22,7 @@ def auth_headers() -> dict[str, str]:
 def clear_auth_session() -> None:
     st.session_state.pop("auth_token", None)
     st.session_state.pop("current_user", None)
+    st.session_state.pop("selected_parish_id", None)
 
 
 def handle_unauthorized(resp: requests.Response) -> None:
@@ -31,6 +32,12 @@ def handle_unauthorized(resp: requests.Response) -> None:
             "Relace vypršela nebo byla odhlášena. Přihlaste se prosím znovu."
         )
         st.rerun()
+
+
+def _fetch_available_parishes(api_base_url: str) -> list[dict]:
+    resp = requests.get(f"{api_base_url}/api/parishes", timeout=5)
+    resp.raise_for_status()
+    return resp.json()
 
 
 def _login_request(api_base_url: str, username: str, password: str) -> dict:
@@ -48,13 +55,13 @@ def _register_request(
     api_base_url: str,
     username: str,
     password: str,
+    home_parish_id: int,
     master_password: str,
-    farnost: str | None = None,
 ) -> dict:
     payload = {
         "username": username,
         "password": password,
-        "farnost": farnost or None,
+        "home_parish_id": home_parish_id,
         "master_password": master_password,
     }
     resp = requests.post(
@@ -77,10 +84,10 @@ def logout_request(api_base_url: str) -> None:
 
 
 def render_auth_gate(api_base_url: str) -> None:
-    """Render login and registration view. No backend queries run until user submits a form."""
+    """Render login and registration view."""
     _, col_center, _ = st.columns([1, 1.4, 1])
     with col_center:
-        st.title("🎹 Varhanici Log")
+        st.title("🎹 Deník varhaníka")
         st.caption("Pro přístup ke kalendáři a záznamům se prosím přihlaste.")
 
         notice = st.session_state.pop("auth_notice", None)
@@ -103,26 +110,50 @@ def render_auth_gate(api_base_url: str) -> None:
                             data = _login_request(api_base_url, username.strip(), password)
                             st.session_state["auth_token"] = data["access_token"]
                             st.session_state["current_user"] = data["user"]
+                            st.session_state.pop("selected_parish_id", None)
                             st.rerun()
                         except ValueError as exc:
                             st.error(str(exc))
                         except requests.RequestException:
                             st.error(
-                                "Nelze se připojit k backendu. Zkontrolujte, že běží FastAPI server."
+                                "Nelze se připojit k serveru. Zkontrolujte prosím, že aplikace běží."
                             )
 
         with tab_register:
+            parishes: list[dict] = []
+            parishes_error = False
+            try:
+                parishes = _fetch_available_parishes(api_base_url)
+            except requests.RequestException:
+                parishes_error = True
+
+            if parishes_error:
+                st.error("Nelze načíst seznam farností ze serveru.")
+
             with st.form("register_form"):
                 reg_username = st.text_input("Uživatelské jméno", placeholder="min. 3 znaky")
-                reg_farnost = st.text_input("Farnost (nepovinné)", placeholder="např. Brno-střed")
+                selected_parish = st.selectbox(
+                    "Domovská farnost",
+                    options=parishes,
+                    format_func=lambda p: p["name"],
+                    index=None,
+                    placeholder="Vyberte svou domovskou farnost...",
+                    disabled=not parishes,
+                )
                 reg_password = st.text_input("Heslo", type="password", placeholder="min. 6 znaků")
                 reg_password_confirm = st.text_input("Potvrzení hesla", type="password")
                 reg_master_password = st.text_input("Master heslo", type="password")
-                submit_register = st.form_submit_button("Vytvořit účet", use_container_width=True)
+                submit_register = st.form_submit_button(
+                    "Vytvořit účet",
+                    use_container_width=True,
+                    disabled=not parishes,
+                )
 
                 if submit_register:
                     if not reg_username.strip() or not reg_password or not reg_master_password:
                         st.warning("Vyplňte uživatelské jméno, heslo a master heslo.")
+                    elif selected_parish is None:
+                        st.warning("Vyberte prosím svou domovskou farnost.")
                     elif len(reg_username.strip()) < 3:
                         st.warning("Uživatelské jméno musí mít alespoň 3 znaky.")
                     elif len(reg_password) < 6:
@@ -135,17 +166,18 @@ def render_auth_gate(api_base_url: str) -> None:
                                 api_base_url=api_base_url,
                                 username=reg_username.strip(),
                                 password=reg_password,
+                                home_parish_id=selected_parish["id"],
                                 master_password=reg_master_password,
-                                farnost=reg_farnost.strip() or None,
                             )
                             st.session_state["auth_token"] = data["access_token"]
                             st.session_state["current_user"] = data["user"]
+                            st.session_state["selected_parish_id"] = selected_parish["id"]
                             st.rerun()
                         except ValueError as exc:
                             st.error(str(exc))
                         except requests.RequestException:
                             st.error(
-                                "Nelze se připojit k backendu. Zkontrolujte, že běží FastAPI server."
+                                "Nelze se připojit k serveru. Zkontrolujte prosím, že aplikace běží."
                             )
 
 
