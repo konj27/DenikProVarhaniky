@@ -2,9 +2,21 @@ import json
 import streamlit.components.v1 as components
 
 
+def _safe_json_for_script(data: object) -> str:
+    """Serialize data to JSON that cannot break out of an HTML <script> tag."""
+    return (
+        json.dumps(data, ensure_ascii=False)
+        .replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
+
+
 def render_calendar(logs: list[dict], height: int = 760) -> None:
     """Render an interactive HTML/CSS/JS calendar component using streamlit.components.v1.html."""
-    events_json = json.dumps(logs, ensure_ascii=False)
+    events_json = _safe_json_for_script(logs)
 
     html_code = f"""
     <!DOCTYPE html>
