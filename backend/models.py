@@ -3,10 +3,39 @@ import sqlite3
 from fastapi import HTTPException, status
 
 from . import auth, schemas
+from .database import log_retention_cutoff_iso
 
 
 def get_health() -> schemas.HealthResponse:
     return schemas.HealthResponse(status="ok")
+
+
+def _ensure_log_owner_or_admin(
+    current_user: schemas.UserResponse,
+    log_row: sqlite3.Row,
+    action_verb: str = "smazat",
+) -> None:
+    if current_user.is_admin:
+        return
+    owner_id = log_row["created_by_user_id"]
+    if owner_id is not None:
+        if owner_id == current_user.id:
+            return
+    elif (log_row["author"] or "").strip() == current_user.username:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=f"Záznam může {action_verb} pouze jeho autor nebo administrátor.",
+    )
+
+
+def purge_expired_logs(db: sqlite3.Connection) -> str:
+    """Delete log entries older than 2 years and return the cutoff ISO timestamp."""
+    cutoff = log_retention_cutoff_iso()
+    cursor = db.execute("DELETE FROM log_entries WHERE created_at < ?", (cutoff,))
+    if cursor.rowcount > 0:
+        db.commit()
+    return cutoff
 
 
 def _ensure_parish_access(
@@ -182,42 +211,49 @@ def list_logs(
     current_user: schemas.UserResponse,
     parish_id: int | None = None,
     skip: int = 0,
-    limit: int = 100,
+    limit: int | None = None,
 ) -> list[schemas.LogEntryResponse]:
+    cutoff = purge_expired_logs(db)
+    limit_sql = "LIMIT ? OFFSET ?" if limit is not None else "LIMIT -1 OFFSET ?"
+
     if parish_id is not None:
         _ensure_parish_access(db, current_user, parish_id)
+        params = (parish_id, cutoff, limit, skip) if limit is not None else (parish_id, cutoff, skip)
         rows = db.execute(
-            """
-            SELECT id, title, author, notes, parish_id, created_at
+            f"""
+            SELECT id, title, author, notes, parish_id, created_by_user_id, created_at
             FROM log_entries
-            WHERE parish_id = ?
-            ORDER BY id DESC
-            LIMIT ? OFFSET ?
+            WHERE parish_id = ? AND created_at >= ?
+            ORDER BY created_at DESC, id DESC
+            {limit_sql}
             """,
-            (parish_id, limit, skip),
+            params,
         ).fetchall()
     elif current_user.is_admin:
+        params = (cutoff, limit, skip) if limit is not None else (cutoff, skip)
         rows = db.execute(
-            """
-            SELECT id, title, author, notes, parish_id, created_at
+            f"""
+            SELECT id, title, author, notes, parish_id, created_by_user_id, created_at
             FROM log_entries
-            ORDER BY id DESC
-            LIMIT ? OFFSET ?
+            WHERE created_at >= ?
+            ORDER BY created_at DESC, id DESC
+            {limit_sql}
             """,
-            (limit, skip),
+            params,
         ).fetchall()
     else:
+        params = (current_user.id, cutoff, limit, skip) if limit is not None else (current_user.id, cutoff, skip)
         rows = db.execute(
-            """
-            SELECT id, title, author, notes, parish_id, created_at
+            f"""
+            SELECT id, title, author, notes, parish_id, created_by_user_id, created_at
             FROM log_entries
             WHERE parish_id IN (
                 SELECT parish_id FROM user_parishes WHERE user_id = ?
-            )
-            ORDER BY id DESC
-            LIMIT ? OFFSET ?
+            ) AND created_at >= ?
+            ORDER BY created_at DESC, id DESC
+            {limit_sql}
             """,
-            (current_user.id, limit, skip),
+            params,
         ).fetchall()
     return [schemas.LogEntryResponse(**dict(row)) for row in rows]
 
@@ -228,7 +264,7 @@ def read_log(
     current_user: schemas.UserResponse,
 ) -> schemas.LogEntryResponse:
     row = db.execute(
-        "SELECT id, title, author, notes, parish_id, created_at FROM log_entries WHERE id = ?",
+        "SELECT id, title, author, notes, parish_id, created_by_user_id, created_at FROM log_entries WHERE id = ?",
         (log_id,),
     ).fetchone()
     if not row:
@@ -263,22 +299,40 @@ def create_log(
 
     if log_in.date:
         timestamp = _normalize_entry_timestamp(log_in.date)
+        if timestamp < log_retention_cutoff_iso():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Nelze přidat záznam starší než 2 roky.",
+            )
         row = db.execute(
             """
-            INSERT INTO log_entries (title, author, notes, parish_id, created_at)
-            VALUES (?, ?, ?, ?, ?)
-            RETURNING id, title, author, notes, parish_id, created_at
+            INSERT INTO log_entries (title, author, notes, parish_id, created_by_user_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            RETURNING id, title, author, notes, parish_id, created_by_user_id, created_at
             """,
-            (log_in.title, log_in.author, log_in.notes, log_in.parish_id, timestamp),
+            (
+                log_in.title,
+                log_in.author,
+                log_in.notes,
+                log_in.parish_id,
+                current_user.id,
+                timestamp,
+            ),
         ).fetchone()
     else:
         row = db.execute(
             """
-            INSERT INTO log_entries (title, author, notes, parish_id, created_at)
-            VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-            RETURNING id, title, author, notes, parish_id, created_at
+            INSERT INTO log_entries (title, author, notes, parish_id, created_by_user_id, created_at)
+            VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            RETURNING id, title, author, notes, parish_id, created_by_user_id, created_at
             """,
-            (log_in.title, log_in.author, log_in.notes, log_in.parish_id),
+            (
+                log_in.title,
+                log_in.author,
+                log_in.notes,
+                log_in.parish_id,
+                current_user.id,
+            ),
         ).fetchone()
     db.commit()
     return schemas.LogEntryResponse(**dict(row))
@@ -291,13 +345,14 @@ def update_log(
     current_user: schemas.UserResponse,
 ) -> schemas.LogEntryResponse:
     existing = db.execute(
-        "SELECT id, title, author, notes, parish_id, created_at FROM log_entries WHERE id = ?",
+        "SELECT id, title, author, notes, parish_id, created_by_user_id, created_at FROM log_entries WHERE id = ?",
         (log_id,),
     ).fetchone()
     if not existing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Log entry not found")
     if existing["parish_id"] is not None:
         _ensure_parish_access(db, current_user, existing["parish_id"])
+    _ensure_log_owner_or_admin(current_user, existing, action_verb="upravit")
 
     updated_data = dict(existing)
     for key, value in log_in.model_dump(exclude_unset=True).items():
@@ -308,7 +363,7 @@ def update_log(
         UPDATE log_entries
         SET title = ?, author = ?, notes = ?
         WHERE id = ?
-        RETURNING id, title, author, notes, parish_id, created_at
+        RETURNING id, title, author, notes, parish_id, created_by_user_id, created_at
         """,
         (updated_data["title"], updated_data["author"], updated_data["notes"], log_id),
     ).fetchone()
@@ -322,13 +377,14 @@ def delete_log(
     current_user: schemas.UserResponse,
 ) -> None:
     existing = db.execute(
-        "SELECT id, parish_id FROM log_entries WHERE id = ?",
+        "SELECT id, author, parish_id, created_by_user_id FROM log_entries WHERE id = ?",
         (log_id,),
     ).fetchone()
     if not existing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Log entry not found")
     if existing["parish_id"] is not None:
         _ensure_parish_access(db, current_user, existing["parish_id"])
+    _ensure_log_owner_or_admin(current_user, existing, action_verb="smazat")
 
     db.execute("DELETE FROM log_entries WHERE id = ?", (log_id,))
     db.commit()

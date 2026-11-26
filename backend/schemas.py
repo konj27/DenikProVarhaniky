@@ -83,6 +83,7 @@ class LogEntryResponse(BaseModel):
     author: str
     notes: str | None = None
     parish_id: int | None = None
+    created_by_user_id: int | None = None
     created_at: datetime
 
 

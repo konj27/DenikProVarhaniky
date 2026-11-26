@@ -182,7 +182,7 @@ def admin_create_denied_request(
 def list_logs(
     parish_id: int | None = None,
     skip: int = 0,
-    limit: int = 100,
+    limit: int | None = None,
     current_user: schemas.UserResponse = Depends(auth.get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ) -> list[schemas.LogEntryResponse]:

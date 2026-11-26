@@ -163,14 +163,16 @@ def create_log_entry(
         timeout=5,
     )
     handle_unauthorized(resp)
-    resp.raise_for_status()
+    if not resp.ok:
+        raise ValueError(_extract_error(resp, "Nepodařilo se vytvořit záznam."))
     return resp.json()
 
 
 def delete_log_entry(log_id: int) -> None:
     resp = requests.delete(f"{API_BASE_URL}/api/logs/{log_id}", headers=auth_headers(), timeout=5)
     handle_unauthorized(resp)
-    resp.raise_for_status()
+    if not resp.ok:
+        raise ValueError(_extract_error(resp, "Záznam se nepodařilo smazat."))
 
 
 # --- Auth Gate ---
@@ -311,6 +313,8 @@ with st.sidebar:
                     )
                     st.toast("Záznam byl přidán!", icon="✅")
                     st.rerun()
+                except ValueError as exc:
+                    st.warning(str(exc))
                 except requests.RequestException as exc:
                     st.error(f"Nepodařilo se vytvořit záznam: {exc}")
 
@@ -350,6 +354,15 @@ if is_admin:
     )
 
 
+def _can_delete_log(entry: dict) -> bool:
+    if is_admin:
+        return True
+    owner_id = entry.get("created_by_user_id")
+    if owner_id is not None:
+        return owner_id == current_user.get("id")
+    return (entry.get("author") or "").strip() == current_user.get("username")
+
+
 def _render_logs_list(logs: list[dict]) -> None:
     if not logs:
         st.info("V této farnosti zatím nejsou žádné záznamy. Přidejte první v levém panelu!")
@@ -365,12 +378,15 @@ def _render_logs_list(logs: list[dict]) -> None:
                 if entry.get("notes"):
                     st.write(entry["notes"])
             with col_action:
-                if st.button("🗑️ Smazat", key=f"del_{entry['id']}", use_container_width=True):
-                    try:
-                        delete_log_entry(entry["id"])
-                        st.rerun()
-                    except requests.RequestException as exc:
-                        st.error(f"Chyba při mazání: {exc}")
+                if _can_delete_log(entry):
+                    if st.button("🗑️ Smazat", key=f"del_{entry['id']}", use_container_width=True):
+                        try:
+                            delete_log_entry(entry["id"])
+                            st.rerun()
+                        except ValueError as exc:
+                            st.warning(str(exc))
+                        except requests.RequestException as exc:
+                            st.error(f"Chyba při mazání: {exc}")
 
 
 def _render_admin_requests_tab(requests_list: list[dict]) -> None:

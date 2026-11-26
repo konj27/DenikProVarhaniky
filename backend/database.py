@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import os
 import sqlite3
 from collections.abc import Generator
@@ -12,6 +13,20 @@ DEFAULT_PARISHES: tuple[str, ...] = (
     "Brno Mendlovo Náměstí",
     "Nový Hrozenkov",
 )
+
+LOG_RETENTION_YEARS = 2
+
+
+def log_retention_cutoff_iso(now: datetime | None = None) -> str:
+    """Return the UTC ISO timestamp exactly LOG_RETENTION_YEARS before `now`."""
+    current = now or datetime.now(timezone.utc)
+    target_year = current.year - LOG_RETENTION_YEARS
+    try:
+        cutoff = current.replace(year=target_year)
+    except ValueError:
+        # Handle Feb 29 on leap years -> Feb 28
+        cutoff = current.replace(year=target_year, day=28)
+    return cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _column_exists(conn: sqlite3.Connection, table_name: str, column_name: str) -> bool:
@@ -107,8 +122,10 @@ def init_db() -> None:
                 author TEXT NOT NULL,
                 notes TEXT,
                 parish_id INTEGER,
+                created_by_user_id INTEGER,
                 created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-                FOREIGN KEY (parish_id) REFERENCES parishes(id) ON DELETE CASCADE
+                FOREIGN KEY (parish_id) REFERENCES parishes(id) ON DELETE CASCADE,
+                FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
             )
             """
         )
@@ -133,6 +150,18 @@ def init_db() -> None:
             conn.execute(
                 "ALTER TABLE log_entries ADD COLUMN parish_id INTEGER REFERENCES parishes(id) ON DELETE CASCADE"
             )
+
+        if not _column_exists(conn, "log_entries", "created_by_user_id"):
+            conn.execute(
+                "ALTER TABLE log_entries ADD COLUMN created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL"
+            )
+
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_log_entries_parish_created
+            ON log_entries (parish_id, created_at)
+            """
+        )
 
         # --- Seed default parishes ---
         for parish_name in DEFAULT_PARISHES:
@@ -232,6 +261,23 @@ def init_db() -> None:
                 "UPDATE log_entries SET parish_id = ? WHERE parish_id IS NULL",
                 (default_parish["id"],),
             )
+
+        # --- Backfill created_by_user_id for legacy log entries matching a username ---
+        conn.execute(
+            """
+            UPDATE log_entries
+            SET created_by_user_id = (
+                SELECT u.id FROM users u WHERE u.username = log_entries.author
+            )
+            WHERE created_by_user_id IS NULL
+            """
+        )
+
+        # --- Purge logs older than the 2-year retention window ---
+        conn.execute(
+            "DELETE FROM log_entries WHERE created_at < ?",
+            (log_retention_cutoff_iso(),),
+        )
 
         conn.commit()
     finally:
