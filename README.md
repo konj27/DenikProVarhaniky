@@ -42,9 +42,12 @@ REGISTRATION_MASTER_PASSWORD=varhanici-master-heslo
 SESSION_TTL_HOURS=24
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=varhanici-admin-heslo
+ENABLE_API_DOCS=false
+BACKEND_ALLOWED_IPS=127.0.0.1,::1
+CORS_ALLOWED_ORIGINS=http://localhost:8501,http://127.0.0.1:8501
 ```
 
-On first database setup, the admin account from `.env` is created automatically as the first user row, and the default parishes (`Brno Mendlovo Náměstí`, `Nový Hrozenkov`) are seeded.
+On first database setup, the admin account from `.env` is created automatically as the first user row, and the default parishes (`Brno Mendlovo Náměstí`, `Nový Hrozenkov`) are seeded. Set `ENABLE_API_DOCS=true` only when you want Swagger UI (`/docs`) during local development, and list only trusted IPs/CIDRs in `BACKEND_ALLOWED_IPS`.
 
 ### 3. Run the FastAPI Backend
 
