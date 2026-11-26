@@ -75,8 +75,15 @@ def list_user_parishes(
 def register_user(
     db: sqlite3.Connection,
     user_in: schemas.UserRegisterRequest,
+    client_ip: str = "unknown",
 ) -> schemas.AuthTokenResponse:
-    auth.verify_master_password(user_in.master_password)
+    auth.check_register_rate_limit(client_ip)
+    try:
+        auth.verify_master_password(user_in.master_password)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_403_FORBIDDEN:
+            auth.record_register_failure(client_ip)
+        raise
 
     username = user_in.username.strip()
     if len(username) < 3:
@@ -135,18 +142,24 @@ def register_user(
 def login_user(
     db: sqlite3.Connection,
     credentials: schemas.UserLoginRequest,
+    client_ip: str = "unknown",
 ) -> schemas.AuthTokenResponse:
     username = credentials.username.strip()
+    auth.check_login_rate_limit(username=username, client_ip=client_ip)
+
     row = db.execute(
         "SELECT id, username, farnost, is_admin, password_hash, created_at FROM users WHERE username = ?",
         (username,),
     ).fetchone()
 
     if not row or not auth.verify_password(credentials.password, row["password_hash"]):
+        auth.record_login_failure(username=username, client_ip=client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Neplatné uživatelské jméno nebo heslo.",
         )
+
+    auth.reset_login_rate_limit(username=username)
 
     user = schemas.UserResponse(
         id=row["id"],

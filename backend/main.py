@@ -1,6 +1,6 @@
 import sqlite3
 from contextlib import asynccontextmanager
-from fastapi import Depends, FastAPI, status
+from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials
 
@@ -40,9 +40,14 @@ app.add_middleware(
 )
 def register(
     user_in: schemas.UserRegisterRequest,
+    request: Request,
     db: sqlite3.Connection = Depends(get_db),
 ) -> schemas.AuthTokenResponse:
-    return models.register_user(db=db, user_in=user_in)
+    return models.register_user(
+        db=db,
+        user_in=user_in,
+        client_ip=auth.get_client_ip(request),
+    )
 
 
 @app.post(
@@ -52,9 +57,14 @@ def register(
 )
 def login(
     credentials: schemas.UserLoginRequest,
+    request: Request,
     db: sqlite3.Connection = Depends(get_db),
 ) -> schemas.AuthTokenResponse:
-    return models.login_user(db=db, credentials=credentials)
+    return models.login_user(
+        db=db,
+        credentials=credentials,
+        client_ip=auth.get_client_ip(request),
+    )
 
 
 @app.post(

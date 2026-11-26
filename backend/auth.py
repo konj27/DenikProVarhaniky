@@ -1,12 +1,16 @@
+from collections import defaultdict, deque
 import hashlib
 import hmac
+import math
 import os
 import secrets
 import sqlite3
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 from dotenv import load_dotenv
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from . import schemas
@@ -20,6 +24,104 @@ SCRYPT_P = 1
 SCRYPT_DKLEN = 64
 
 bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def _get_env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, str(default))
+    try:
+        value = int(raw)
+        return value if value > 0 else default
+    except ValueError:
+        return default
+
+
+class _SlidingWindowRateLimiter:
+    """Thread-safe in-memory sliding window rate limiter for auth endpoints."""
+
+    def __init__(self, max_attempts: int, window_seconds: int) -> None:
+        self.max_attempts = max_attempts
+        self.window_seconds = window_seconds
+        self._attempts: dict[str, deque[float]] = defaultdict(deque)
+        self._lock = threading.Lock()
+
+    def _prune(self, key: str, now: float) -> deque[float]:
+        cutoff = now - self.window_seconds
+        bucket = self._attempts[key]
+        while bucket and bucket[0] <= cutoff:
+            bucket.popleft()
+        return bucket
+
+    def check(self, key: str, action_label: str) -> None:
+        now = time.monotonic()
+        with self._lock:
+            bucket = self._prune(key, now)
+            if len(bucket) >= self.max_attempts:
+                retry_after = max(1, math.ceil(self.window_seconds - (now - bucket[0])))
+                minutes = math.ceil(retry_after / 60)
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Příliš mnoho neúspěšných pokusů o {action_label}. Zkuste to prosím znovu za {minutes} min.",
+                    headers={"Retry-After": str(retry_after)},
+                )
+            if not bucket:
+                self._attempts.pop(key, None)
+
+    def record_failure(self, key: str) -> None:
+        now = time.monotonic()
+        with self._lock:
+            bucket = self._prune(key, now)
+            bucket.append(now)
+
+    def reset(self, key: str) -> None:
+        with self._lock:
+            self._attempts.pop(key, None)
+
+
+_login_user_limiter = _SlidingWindowRateLimiter(
+    max_attempts=_get_env_int("LOGIN_MAX_ATTEMPTS", 5),
+    window_seconds=_get_env_int("LOGIN_WINDOW_SECONDS", 900),
+)
+_login_ip_limiter = _SlidingWindowRateLimiter(
+    max_attempts=_get_env_int("LOGIN_IP_MAX_ATTEMPTS", 20),
+    window_seconds=_get_env_int("LOGIN_WINDOW_SECONDS", 900),
+)
+_register_ip_limiter = _SlidingWindowRateLimiter(
+    max_attempts=_get_env_int("REGISTER_MAX_ATTEMPTS", 10),
+    window_seconds=_get_env_int("REGISTER_WINDOW_SECONDS", 900),
+)
+
+
+def get_client_ip(request: Request) -> str:
+    """Extract client IP address from the FastAPI request."""
+    return request.client.host if request.client and request.client.host else "unknown"
+
+
+def check_login_rate_limit(username: str, client_ip: str) -> None:
+    user_key = username.strip().lower()
+    if user_key:
+        _login_user_limiter.check(user_key, "přihlášení")
+    _login_ip_limiter.check(client_ip, "přihlášení")
+
+
+def record_login_failure(username: str, client_ip: str) -> None:
+    user_key = username.strip().lower()
+    if user_key:
+        _login_user_limiter.record_failure(user_key)
+    _login_ip_limiter.record_failure(client_ip)
+
+
+def reset_login_rate_limit(username: str) -> None:
+    user_key = username.strip().lower()
+    if user_key:
+        _login_user_limiter.reset(user_key)
+
+
+def check_register_rate_limit(client_ip: str) -> None:
+    _register_ip_limiter.check(client_ip, "registraci")
+
+
+def record_register_failure(client_ip: str) -> None:
+    _register_ip_limiter.record_failure(client_ip)
 
 
 def _get_session_ttl_hours() -> int:
