@@ -11,8 +11,10 @@ A lightweight full-stack Python webpage using:
 varhanici_logPage/
 ├── backend/
 │   ├── __init__.py
-│   ├── database.py    # Standard sqlite3 connection and table initialization
-│   ├── main.py        # FastAPI route endpoints delegating to models.py
+│   ├── auth.py        # Password hashing, sessions, auth guards, and rate limiting
+│   ├── database.py    # Standard sqlite3 connection, WAL setup, and table initialization
+│   ├── main.py        # FastAPI app setup, CORS, and IP allowlist middleware
+│   ├── routes.py      # FastAPI route endpoints delegating to models.py
 │   ├── models.py      # Endpoint handler functions returning Pydantic response models
 │   └── schemas.py     # Pydantic request schemas and response models
 ├── frontend/
